@@ -157,7 +157,11 @@ class Defaults(BaseModel):
             "cancelled",
             "declined",
             "expired",
+            # Every inquiry variant. An inquiry is a conversation, not a
+            # booking -- nobody is owed a key. inquiryPreapproved in
+            # particular reads as positive but still is not a stay.
             "inquiry",
+            "inquiryPreapproved",
             "inquiryNotPossible",
             "inquiryDenied",
             "inquiryTimedout",

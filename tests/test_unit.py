@@ -135,7 +135,22 @@ def test_active_statuses(status):
     assert reservation_is_active({"status": status}, unit_map()) is True
 
 
-@pytest.mark.parametrize("status", ["cancelled", "declined", "expired", "inquiry"])
+@pytest.mark.parametrize(
+    "status",
+    [
+        "cancelled",
+        "declined",
+        "expired",
+        "inquiry",
+        # Seen on the live account. Reads as positive but is still only an
+        # inquiry -- an inquiry must never open a door.
+        "inquiryPreapproved",
+        "inquiryNotPossible",
+        "inquiryDenied",
+        "inquiryTimedout",
+        "inquiryNotInterested",
+    ],
+)
 def test_inactive_statuses(status):
     assert reservation_is_active({"status": status}, unit_map()) is False
 

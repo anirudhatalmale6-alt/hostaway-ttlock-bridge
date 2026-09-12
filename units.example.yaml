@@ -28,8 +28,8 @@ defaults:
   active_statuses: [new, modified, confirmed, ownerStay]
   # Statuses that mean "revoke now".
   cancelled_statuses:
-    [cancelled, declined, expired, inquiry, inquiryNotPossible, inquiryDenied,
-     inquiryTimedout, inquiryNotInterested]
+    [cancelled, declined, expired, inquiry, inquiryPreapproved,
+     inquiryNotPossible, inquiryDenied, inquiryTimedout, inquiryNotInterested]
 
 units:
   - listing_map_id: 123456
