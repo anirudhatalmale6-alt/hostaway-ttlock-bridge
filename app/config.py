@@ -119,6 +119,11 @@ class UnitConfig(BaseModel):
     buffer_after_minutes: int | None = None
     code_length: int | None = None
     strategy: Strategy | None = None
+    # One code for every door in this unit -- e.g. a building entrance and the
+    # flat behind it. The guest memorises one number, and it fits Hostaway's
+    # single doorCode field. Only possible on custom-strategy (gateway) doors;
+    # a generated code is derived per lock and cannot be shared.
+    shared_code: bool | None = None
     locks: list[LockConfig] = Field(default_factory=list)
 
     @field_validator("timezone")
@@ -141,6 +146,7 @@ class Defaults(BaseModel):
     buffer_after_minutes: int = 0
     code_length: int = 6
     strategy: Strategy = "auto"
+    shared_code: bool = False
     # Hostaway statuses that mean "a guest is coming / is here".
     active_statuses: list[str] = Field(
         default_factory=lambda: ["new", "modified", "confirmed", "ownerStay"]
@@ -179,6 +185,7 @@ class ResolvedUnit(BaseModel):
     code_length: int
     locks: list[LockConfig]
     strategy: Strategy
+    shared_code: bool
 
     @property
     def tz(self) -> ZoneInfo:
@@ -236,6 +243,7 @@ class UnitMap(BaseModel):
             code_length=_first(u.code_length, d.code_length),
             locks=u.locks,
             strategy=u.strategy or d.strategy,
+            shared_code=_first(u.shared_code, d.shared_code),
         )
 
 

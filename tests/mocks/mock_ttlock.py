@@ -295,6 +295,30 @@ async def dump_passcodes() -> dict:
     return {"passcodes": list(state.passcodes.values())}
 
 
+@app.post("/__test__/manual_passcode")
+async def manual_passcode(request: Request) -> dict:
+    """Add a passcode the way a human would in the TTLock phone app.
+
+    Used to prove the bridge never touches a code it did not create.
+    """
+    body = await request.json()
+    state.next_pwd_id += 1
+    pwd_id = state.next_pwd_id
+    state.passcodes[pwd_id] = {
+        "keyboardPwdId": pwd_id,
+        "lockId": int(body["lockId"]),
+        "keyboardPwd": str(body["keyboardPwd"]),
+        "keyboardPwdName": body.get("keyboardPwdName") or "Set in the app",
+        "keyboardPwdType": int(body.get("keyboardPwdType") or 2),
+        "keyboardPwdVersion": 4,
+        "startDate": int(body.get("startDate") or 0),
+        "endDate": int(body.get("endDate") or 0),
+        "isCustom": 1,
+        "status": 1,
+    }
+    return {"keyboardPwdId": pwd_id}
+
+
 @app.post("/__test__/reset")
 async def reset() -> dict:
     state.reset()

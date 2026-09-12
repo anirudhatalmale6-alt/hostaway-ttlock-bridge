@@ -27,8 +27,11 @@ sys.path.insert(0, str(ROOT))
 LOCK_WITH_GATEWAY = 5001
 LOCK_NO_GATEWAY = 5002
 LOCK_OTHER_UNIT = 5003
+LOCK_ENTRANCE = 5004
+LOCK_FLAT = 5005
 LISTING_A = 101
 LISTING_B = 102
+LISTING_SHARED = 103
 
 UNITS_YAML = f"""
 defaults:
@@ -57,6 +60,17 @@ units:
     locks:
       - lock_id: {LOCK_OTHER_UNIT}
         label: "Apartment door"
+
+  # A building entrance plus the flat behind it: the guest gets one number.
+  - listing_map_id: {LISTING_SHARED}
+    name: "Old Town Apartment"
+    shared_code: true
+    locks:
+      - lock_id: {LOCK_ENTRANCE}
+        label: "Building entrance"
+      - lock_id: {LOCK_FLAT}
+        label: "Flat door"
+        primary: true
 """
 
 ADMIN_TOKEN = "test-admin-token"
@@ -136,6 +150,20 @@ class Harness:
 
     def fail_next_ttlock_writes(self, n: int) -> None:
         self.http.post(f"{self.ttlock_url}/__test__/fail_next_writes/{n}")
+
+    def add_manual_passcode(self, lock_id: int, code: str, name: str) -> int:
+        """Add a code the way a human would in the TTLock app."""
+        r = self.http.post(
+            f"{self.ttlock_url}/__test__/manual_passcode",
+            json={"lockId": lock_id, "keyboardPwd": code, "keyboardPwdName": name},
+        )
+        r.raise_for_status()
+        return r.json()["keyboardPwdId"]
+
+    def passcode_by_id(self, pwd_id: int) -> dict | None:
+        return next(
+            (p for p in self.passcodes() if p["keyboardPwdId"] == pwd_id), None
+        )
 
     # -- the bridge ----------------------------------------------------
 
@@ -253,6 +281,20 @@ def harness():
                 "hasGateway": 1,
                 "keyboardPwdVersion": 4,
                 "electricQuantity": 94,
+            },
+            {
+                "lockId": LOCK_ENTRANCE,
+                "lockAlias": "Old Town building entrance",
+                "hasGateway": 1,
+                "keyboardPwdVersion": 4,
+                "electricQuantity": 77,
+            },
+            {
+                "lockId": LOCK_FLAT,
+                "lockAlias": "Old Town flat door",
+                "hasGateway": 1,
+                "keyboardPwdVersion": 4,
+                "electricQuantity": 82,
             },
         ]
     )

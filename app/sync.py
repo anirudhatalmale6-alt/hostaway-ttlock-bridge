@@ -41,10 +41,15 @@ class DesiredCode:
     start_ms: int | None
     end_ms: int | None
     strategy: str
+    # Set only when the unit shares one code across its doors. None means
+    # "any code will do", and the digits are chosen per lock.
+    code: str | None = None
 
     @property
     def hash(self) -> str:
-        raw = f"{self.present}|{self.start_ms}|{self.end_ms}|{self.strategy}"
+        raw = (
+            f"{self.present}|{self.start_ms}|{self.end_ms}|{self.strategy}|{self.code}"
+        )
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
@@ -343,6 +348,8 @@ class Syncer:
                 )
             )
 
+        self._assign_shared_code(rid, listing_map_id, desired)
+
         for d in desired:
             try:
                 code = await self._apply_one(rid, listing_map_id, d, result)
@@ -420,22 +427,28 @@ class Syncer:
         if snapshot["keyboard_pwd_id"] and d.strategy == "custom":
             # Same digits, new window -- the guest's code does not change when
             # they extend their stay. This is the nicest possible behaviour.
+            # The one exception is a door joining a shared code late, where the
+            # digits have to be brought into line with the rest of the unit.
+            retarget = bool(d.code) and snapshot["code"] != d.code
             await self.ttlock.change_passcode(
                 lock_id=d.lock.lock_id,
                 keyboard_pwd_id=int(snapshot["keyboard_pwd_id"]),
                 name=name,
+                new_code=d.code if retarget else None,
                 start_ms=d.start_ms,
                 end_ms=d.end_ms,
                 change_type=via,
             )
+            final_code = d.code if retarget else snapshot["code"]
             result.actions.append(
-                f"lock {d.lock.lock_id}: updated window on passcode "
+                f"lock {d.lock.lock_id}: updated "
+                f"{'digits and window' if retarget else 'window'} on passcode "
                 f"{snapshot['keyboard_pwd_id']}"
             )
             self._mark_synced(
-                rid, d, int(snapshot["keyboard_pwd_id"]), snapshot["code"]
+                rid, d, int(snapshot["keyboard_pwd_id"]), final_code
             )
-            return snapshot["code"]
+            return final_code
 
         if snapshot["keyboard_pwd_id"]:
             # Generated codes are derived from the window, so a date change
@@ -461,7 +474,7 @@ class Syncer:
                 )
 
         if d.strategy == "custom":
-            code = generate_code(
+            code = d.code or generate_code(
                 length=self._code_length(listing_map_id),
                 exclude=self._codes_in_use(d.lock.lock_id, exclude_reservation=rid),
             )
@@ -486,6 +499,84 @@ class Syncer:
         )
         self._mark_synced(rid, d, created["keyboard_pwd_id"], created["code"])
         return created["code"]
+
+    # -- shared codes --------------------------------------------------
+
+    def _assign_shared_code(
+        self, rid: str, listing_map_id: int, desired: list[DesiredCode]
+    ) -> None:
+        """Give every gateway door in this unit the same digits.
+
+        For a building entrance plus the flat behind it, one number is what the
+        guest actually wants -- and it is the only arrangement that fits
+        Hostaway's single ``doorCode`` field without inventing a convention.
+
+        Offline (``generated``) codes are derived per lock by TTLock, so they
+        cannot join the shared code and keep their own.
+        """
+        unit = get_unit_map().resolve(listing_map_id)
+        if unit is None or not unit.shared_code:
+            return
+
+        sharers = [d for d in desired if d.present and d.strategy == "custom"]
+        if not sharers:
+            return
+
+        lock_ids = [d.lock.lock_id for d in sharers]
+        code = self._existing_shared_code(rid, lock_ids)
+        if code is None:
+            code = generate_code(
+                length=unit.code_length,
+                exclude=self._codes_in_use_on_any(lock_ids, exclude_reservation=rid),
+            )
+        for d in sharers:
+            d.code = code
+
+        offline = [d for d in desired if d.present and d.strategy != "custom"]
+        if offline:
+            log.info(
+                "reservation %s: unit %s shares one code across %d door(s); "
+                "%d offline door(s) keep their own derived code",
+                rid,
+                listing_map_id,
+                len(sharers),
+                len(offline),
+            )
+
+    def _existing_shared_code(self, rid: str, lock_ids: list[int]) -> str | None:
+        """Reuse the code this booking already has, so turning shared_code on
+        (or adding a door) does not change the digits a guest was given."""
+        with session_scope() as s:
+            rows = (
+                s.query(PasscodeRecord)
+                .filter(
+                    PasscodeRecord.reservation_id == rid,
+                    PasscodeRecord.lock_id.in_(lock_ids),
+                    PasscodeRecord.code.isnot(None),
+                    PasscodeRecord.strategy == "custom",
+                )
+                .all()
+            )
+            by_lock = {r.lock_id: r.code for r in rows if r.code}
+        for lock_id in lock_ids:  # config order, so the primary door wins
+            if lock_id in by_lock:
+                return by_lock[lock_id]
+        return None
+
+    def _codes_in_use_on_any(
+        self, lock_ids: list[int], exclude_reservation: str
+    ) -> set[str]:
+        with session_scope() as s:
+            rows = (
+                s.query(PasscodeRecord)
+                .filter(
+                    PasscodeRecord.lock_id.in_(lock_ids),
+                    PasscodeRecord.reservation_id != exclude_reservation,
+                    PasscodeRecord.code.isnot(None),
+                )
+                .all()
+            )
+            return {r.code for r in rows if r.code}
 
     # -- ledger helpers ------------------------------------------------
 

@@ -73,7 +73,22 @@ $EDITOR .env
 cp units.example.yaml units.yaml
 ```
 
-You need two ids per door. Get the lock ids from the service itself:
+With more than a handful of properties, let the accounts draft it for you:
+
+```bash
+python scripts/bootstrap_units.py > units.draft.yaml
+```
+
+That reads both accounts (read-only — it writes nothing anywhere) and emits a
+skeleton: every TTLock lock listed with its id, alias, gateway status and
+battery, and a `units:` block for every listing that actually has reservations.
+Pair them up, delete what you do not manage, save as `units.yaml`.
+
+It takes listing ids from real reservations rather than from the listings
+endpoint, because `listingMapId` on a reservation is the field the bridge
+matches on, and that is the one that has to be right.
+
+Doing it by hand instead, you need two ids per door:
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8000/admin/locks
@@ -135,6 +150,55 @@ cheapest way to confirm the listing map is right before real doors change.
 
 ---
 
+## Several doors, and units that need only one number
+
+A unit can have as many locks as it has doors; every one of them gets the same
+window. For a building entrance plus the flat behind it, set `shared_code` and
+the guest gets a single number that opens both:
+
+```yaml
+  - listing_map_id: 123458
+    name: "Old Town Apartment"
+    shared_code: true
+    locks:
+      - lock_id: 9876547
+        label: "Building entrance"
+      - lock_id: 9876548
+        label: "Flat door"
+        primary: true
+```
+
+Two separate passcodes are created, one per lock — the same digits, not a
+shared record — so each door can still be revoked independently. It also means
+the one `doorCode` field Hostaway gives us is enough.
+
+Leave `shared_code` off and each door gets its own code. That is the stronger
+arrangement if you want the cleaner to hold the gate code but not the flat
+code, but only the `primary` door's code reaches the guest's message.
+
+`shared_code` needs gateways: an offline code is derived by TTLock per lock and
+cannot be made to match another door's. Offline doors in a shared unit keep
+their own code, and the service logs when that happens.
+
+---
+
+## Locks this service must not touch
+
+The bridge only ever manages locks named in `units.yaml`. Everything else on
+the TTLock account — long lets, your own property, anything — is invisible to
+it.
+
+Within a managed lock it is narrower still: **it only deletes passcodes it
+created itself.** Each one is tracked by `keyboardPwdId` in the ledger, and the
+service never enumerates a lock to tidy it up. A cleaner's code, an owner code,
+or anything you set by hand in the TTLock app survives a full booking
+lifecycle on the same door. There is a test that asserts exactly this.
+
+So you can keep using the TTLock app alongside this service, on the same
+account, at the same time.
+
+---
+
 ## Adding a property later
 
 1. `GET /admin/locks` → copy the new `lock_id`.
@@ -183,6 +247,7 @@ per unit; `strategy` can additionally be overridden per lock.
 | `check_in_time` / `check_out_time` | Fallback when the reservation carries no time. |
 | `buffer_before_minutes` / `buffer_after_minutes` | Widen the window at each end — early arrivals, late departures, cleaners. |
 | `code_length` | 4–9 digits. `custom` strategy only. |
+| `shared_code` | One code for every gateway door in the unit — entrance + flat. |
 | `primary` (per lock) | This door's code is written to Hostaway's `doorCode`. One per unit. |
 | `strategy` | `auto` (default) / `custom` / `generated`. |
 | `active_statuses` | Hostaway statuses that mean "give access". Anything unrecognised is treated as inactive — it fails closed. |
@@ -244,7 +309,7 @@ make test        # everything, ~40s
 make test-fast   # skips the two that wait on the reconciler
 ```
 
-56 tests. The end-to-end suite runs three real HTTP servers on loopback — a
+61 tests. The end-to-end suite runs three real HTTP servers on loopback — a
 mock Hostaway, a mock TTLock, and the bridge itself under uvicorn. Nothing is
 monkeypatched: tests change a booking on the mock Hostaway, which delivers a
 genuine webhook over the network, and then assert on what ended up on the mock

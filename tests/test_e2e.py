@@ -16,6 +16,9 @@ import pytest
 from tests.conftest import (
     LISTING_A,
     LISTING_B,
+    LISTING_SHARED,
+    LOCK_ENTRANCE,
+    LOCK_FLAT,
     LOCK_NO_GATEWAY,
     LOCK_OTHER_UNIT,
     LOCK_WITH_GATEWAY,
@@ -104,6 +107,61 @@ def test_codes_are_not_guessable(harness):
     assert code not in {"000000", "111111", "123456", "654321"}
     assert len(set(code)) > 2
     assert not code.startswith("0")
+
+
+def test_entrance_and_flat_share_one_code(harness):
+    """A building entrance plus the flat behind it: one number, both doors."""
+    rid = 910003
+    arrival, departure = TODAY + dt.timedelta(days=25), TODAY + dt.timedelta(days=27)
+    harness.upsert_reservation(
+        booking(rid, arrival, departure, listingMapId=LISTING_SHARED)
+    )
+
+    entrance = harness.wait_for_codes(rid, LOCK_ENTRANCE)[0]
+    flat = harness.wait_for_codes(rid, LOCK_FLAT)[0]
+
+    assert entrance["keyboardPwd"] == flat["keyboardPwd"]
+    # Distinct passcodes on distinct locks -- same digits, not one shared record.
+    assert entrance["keyboardPwdId"] != flat["keyboardPwdId"]
+    start_ms, end_ms = expected_window(arrival, departure)
+    assert (entrance["startDate"], entrance["endDate"]) == (start_ms, end_ms)
+    assert (flat["startDate"], flat["endDate"]) == (start_ms, end_ms)
+
+    writes = wait_until(
+        lambda: [w for w in harness.door_code_writes() if w[0] == str(rid)] or None,
+        what="doorCode write-back for the shared-code unit",
+    )
+    assert writes[-1][1] == entrance["keyboardPwd"]
+
+
+def test_shared_code_survives_a_date_change(harness):
+    rid = 910004
+    arrival, departure = TODAY + dt.timedelta(days=35), TODAY + dt.timedelta(days=37)
+    harness.upsert_reservation(
+        booking(rid, arrival, departure, listingMapId=LISTING_SHARED)
+    )
+    original = harness.wait_for_codes(rid, LOCK_ENTRANCE)[0]["keyboardPwd"]
+
+    new_departure = departure + dt.timedelta(days=3)
+    harness.upsert_reservation(
+        booking(
+            rid, arrival, new_departure, listingMapId=LISTING_SHARED, status="modified"
+        ),
+        event="reservation updated",
+    )
+
+    _, expected_end = expected_window(arrival, new_departure)
+    wait_until(
+        lambda: all(
+            harness.codes_for(rid, lock)
+            and harness.codes_for(rid, lock)[0]["endDate"] == expected_end
+            for lock in (LOCK_ENTRANCE, LOCK_FLAT)
+        ),
+        what="both doors extended",
+    )
+    # Still one number, still the one the guest was originally given.
+    assert harness.codes_for(rid, LOCK_ENTRANCE)[0]["keyboardPwd"] == original
+    assert harness.codes_for(rid, LOCK_FLAT)[0]["keyboardPwd"] == original
 
 
 # ----------------------------------------------------------------------
@@ -293,6 +351,42 @@ def test_ttlock_failure_is_retried_until_it_sticks(harness):
     harness.wait_for_codes(rid, LOCK_NO_GATEWAY, timeout=150)
     assert all(c["in_sync"] for c in harness.ledger(rid))
     assert all(c["last_error"] is None for c in harness.ledger(rid))
+
+
+def test_codes_it_did_not_create_are_never_touched(harness):
+    """The same TTLock account also holds long-let and owner codes.
+
+    The bridge must only ever remove passcodes it put there itself. It tracks
+    its own by keyboardPwdId in the ledger and never enumerates a lock to tidy
+    it up -- so a code set by hand in the phone app survives a whole booking
+    lifecycle on the very same door.
+    """
+    manual_id = harness.add_manual_passcode(LOCK_WITH_GATEWAY, "849271", "Cleaner")
+    manual_unmanaged = harness.add_manual_passcode(
+        LOCK_NO_GATEWAY, "573914", "Long-let tenant"
+    )
+
+    rid = 940004
+    arrival, departure = TODAY + dt.timedelta(days=80), TODAY + dt.timedelta(days=82)
+    harness.upsert_reservation(booking(rid, arrival, departure))
+    harness.wait_for_codes(rid, LOCK_WITH_GATEWAY)
+
+    # ...and now cancel it, which deletes the guest code from both doors.
+    harness.upsert_reservation(
+        booking(rid, arrival, departure, status="cancelled"),
+        event="reservation updated",
+    )
+    harness.wait_for_no_codes(rid, LOCK_WITH_GATEWAY)
+    harness.wait_for_no_codes(rid, LOCK_NO_GATEWAY)
+
+    survivor = harness.passcode_by_id(manual_id)
+    assert survivor is not None, "the bridge deleted a code a human had set"
+    assert survivor["keyboardPwd"] == "849271"
+    assert survivor["keyboardPwdName"] == "Cleaner"
+
+    other = harness.passcode_by_id(manual_unmanaged)
+    assert other is not None
+    assert other["keyboardPwd"] == "573914"
 
 
 def test_unmapped_listing_is_ignored(harness):

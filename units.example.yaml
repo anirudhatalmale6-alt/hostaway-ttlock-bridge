@@ -43,6 +43,19 @@ units:
       - lock_id: 9876544
         label: "Side gate"
 
+  # A building entrance plus the flat behind it. shared_code gives the guest a
+  # single number that opens both, which is also the only arrangement that
+  # fits Hostaway's one doorCode field without inventing a convention.
+  - listing_map_id: 123458
+    name: "Old Town Apartment"
+    shared_code: true
+    locks:
+      - lock_id: 9876547
+        label: "Building entrance"
+      - lock_id: 9876548
+        label: "Flat door"
+        primary: true
+
   - listing_map_id: 123457
     name: "City Loft"
     timezone: Europe/Madrid     # per-unit override

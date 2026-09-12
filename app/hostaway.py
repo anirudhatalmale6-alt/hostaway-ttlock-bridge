@@ -195,6 +195,22 @@ class HostawayClient:
                 break
         return out
 
+    async def list_listings(self, page_size: int = 100) -> list[dict]:
+        out: list[dict] = []
+        offset = 0
+        while True:
+            body = await self._request(
+                "GET", "/listings", params={"limit": page_size, "offset": offset}
+            )
+            page = body.get("result") or []
+            out.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
+            if offset > 10_000:  # pragma: no cover - pagination guard
+                break
+        return out
+
     async def set_door_code(self, reservation_id: str | int, code: str) -> None:
         """Write the code onto the reservation so Hostaway's guest-messaging
         templates can use {{doorCode}}.  Best effort -- never fatal."""

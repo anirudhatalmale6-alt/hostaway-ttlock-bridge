@@ -232,6 +232,34 @@ def test_two_primary_locks_are_refused():
         )
 
 
+def test_shared_code_defaults_off_and_can_be_set_per_unit():
+    m = UnitMap.model_validate(
+        {
+            "defaults": {"shared_code": False},
+            "units": [
+                {"listing_map_id": 1, "locks": []},
+                {"listing_map_id": 2, "shared_code": True, "locks": []},
+            ],
+        }
+    )
+    assert m.resolve(1).shared_code is False
+    assert m.resolve(2).shared_code is True
+
+
+def test_shared_code_can_default_on_for_the_whole_portfolio():
+    m = UnitMap.model_validate(
+        {
+            "defaults": {"shared_code": True},
+            "units": [
+                {"listing_map_id": 1, "locks": []},
+                {"listing_map_id": 2, "shared_code": False, "locks": []},
+            ],
+        }
+    )
+    assert m.resolve(1).shared_code is True
+    assert m.resolve(2).shared_code is False
+
+
 def test_no_primary_lock_is_allowed():
     m = UnitMap.model_validate(
         {"units": [{"listing_map_id": 1, "locks": [{"lock_id": 1}, {"lock_id": 2}]}]}
