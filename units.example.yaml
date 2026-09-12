@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# The only file you edit to add a property.
+#
+# Workflow for a new unit:
+#   1. curl -H "Authorization: Bearer $ADMIN_TOKEN" localhost:8000/admin/locks
+#      -> gives you every lock_id on the TTLock account and whether it has a
+#         gateway.
+#   2. Find the Hostaway listing id (listingMapId) in Hostaway -> Listings, or
+#      read it off any reservation for that property.
+#   3. Add the block below, then:
+#      curl -XPOST -H "Authorization: Bearer $ADMIN_TOKEN" localhost:8000/admin/reload
+#   4. curl -XPOST .../admin/sweep  -- back-fills codes for existing bookings.
+#
+# No restart, no code change, no redeploy.
+# ---------------------------------------------------------------------------
+
+defaults:
+  timezone: Europe/London       # IANA name. Used to turn Hostaway's local
+                                # dates into the UTC instants TTLock wants.
+  check_in_time: "15:00"        # fallback when the reservation has no time
+  check_out_time: "11:00"
+  buffer_before_minutes: 60     # code goes live an hour before check-in
+  buffer_after_minutes: 60      # and dies an hour after check-out
+  code_length: 6                # 4-9; only used by the "custom" strategy
+  strategy: auto                # auto | custom | generated -- see README
+
+  # Hostaway reservation statuses that mean "a guest should have access".
+  active_statuses: [new, modified, confirmed, ownerStay]
+  # Statuses that mean "revoke now".
+  cancelled_statuses:
+    [cancelled, declined, expired, inquiry, inquiryNotPossible, inquiryDenied,
+     inquiryTimedout, inquiryNotInterested]
+
+units:
+  - listing_map_id: 123456
+    name: "Seaside Cottage"
+    locks:
+      - lock_id: 9876543
+        label: "Front door"
+      - lock_id: 9876544
+        label: "Side gate"
+
+  - listing_map_id: 123457
+    name: "City Loft"
+    timezone: Europe/Madrid     # per-unit override
+    check_in_time: "16:00"
+    locks:
+      - lock_id: 9876545
+        label: "Apartment door"
+      - lock_id: 9876546
+        label: "Building entrance"
+        strategy: custom        # this one has a gateway, force custom codes

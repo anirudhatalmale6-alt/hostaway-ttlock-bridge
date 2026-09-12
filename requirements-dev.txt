@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest==8.3.4
+# Only the mock servers parse form bodies (the bridge sends them but never
+# receives them), so this stays out of the runtime image.
+python-multipart==0.0.20

@@ -1,0 +1,30 @@
+services:
+  bridge:
+    build: .
+    image: hostaway-ttlock-bridge:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # Put a TLS terminator (Caddy, nginx, Cloudflare Tunnel) in front of this.
+      # Hostaway will only deliver webhooks to an https URL.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - bridge-data:/data
+      - ./units.yaml:/config/units.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# IMPORTANT: exactly one replica. The ledger is SQLite and the reconciler is a
+# singleton; two containers would race each other onto the same locks.
+
+volumes:
+  bridge-data:
