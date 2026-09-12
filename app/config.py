@@ -105,6 +105,13 @@ class LockConfig(BaseModel):
     # this the first listed lock wins, which makes the message content depend
     # on YAML ordering -- too subtle to leave to chance.
     primary: bool = False
+    # Write this door's code into a Hostaway *reservation* custom field, so a
+    # second door (a building entrance, say) can reach the guest even though
+    # Hostaway only gives us one doorCode field. The id comes from
+    # `GET /v1/customFields`; the field must have object=reservation -- a
+    # listing field holds one fixed value per property and cannot carry a code
+    # that differs per booking.
+    custom_field_id: int | None = None
 
 
 class UnitConfig(BaseModel):

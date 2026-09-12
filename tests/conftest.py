@@ -29,9 +29,14 @@ LOCK_NO_GATEWAY = 5002
 LOCK_OTHER_UNIT = 5003
 LOCK_ENTRANCE = 5004
 LOCK_FLAT = 5005
+LOCK_TWO_FLAT = 5006
+LOCK_TWO_ENTRANCE = 5007
 LISTING_A = 101
 LISTING_B = 102
 LISTING_SHARED = 103
+LISTING_TWO_CODES = 104
+ENTRANCE_CUSTOM_FIELD_ID = 900
+OTHER_CUSTOM_FIELD_ID = 901
 
 UNITS_YAML = f"""
 defaults:
@@ -71,6 +76,18 @@ units:
       - lock_id: {LOCK_FLAT}
         label: "Flat door"
         primary: true
+
+  # Same shape, but the guest gets two DIFFERENT codes: the flat code goes in
+  # Hostaway's doorCode, the entrance code into a reservation custom field.
+  - listing_map_id: {LISTING_TWO_CODES}
+    name: "Anderson House Flat 9"
+    locks:
+      - lock_id: {LOCK_TWO_FLAT}
+        label: "Flat door"
+        primary: true
+      - lock_id: {LOCK_TWO_ENTRANCE}
+        label: "Building entrance"
+        custom_field_id: {ENTRANCE_CUSTOM_FIELD_ID}
 """
 
 ADMIN_TOKEN = "test-admin-token"
@@ -139,6 +156,11 @@ class Harness:
 
     def door_code_writes(self) -> list:
         return self.http.get(f"{self.hostaway_url}/__test__/door_codes").json()["writes"]
+
+    def custom_field_writes(self) -> list:
+        return self.http.get(f"{self.hostaway_url}/__test__/door_codes").json()[
+            "custom_fields"
+        ]
 
     # -- inspecting TTLock --------------------------------------------
 
@@ -295,6 +317,20 @@ def harness():
                 "hasGateway": 1,
                 "keyboardPwdVersion": 4,
                 "electricQuantity": 82,
+            },
+            {
+                "lockId": LOCK_TWO_FLAT,
+                "lockAlias": "Anderson House Flat 9",
+                "hasGateway": 1,
+                "keyboardPwdVersion": 4,
+                "electricQuantity": 71,
+            },
+            {
+                "lockId": LOCK_TWO_ENTRANCE,
+                "lockAlias": "Anderson House entrance",
+                "hasGateway": 1,
+                "keyboardPwdVersion": 4,
+                "electricQuantity": 64,
             },
         ]
     )

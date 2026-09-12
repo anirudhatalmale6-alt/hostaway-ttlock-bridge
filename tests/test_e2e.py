@@ -16,9 +16,14 @@ import pytest
 from tests.conftest import (
     LISTING_A,
     LISTING_B,
+    ENTRANCE_CUSTOM_FIELD_ID,
     LISTING_SHARED,
+    LISTING_TWO_CODES,
     LOCK_ENTRANCE,
     LOCK_FLAT,
+    LOCK_TWO_ENTRANCE,
+    LOCK_TWO_FLAT,
+    OTHER_CUSTOM_FIELD_ID,
     LOCK_NO_GATEWAY,
     LOCK_OTHER_UNIT,
     LOCK_WITH_GATEWAY,
@@ -132,6 +137,41 @@ def test_entrance_and_flat_share_one_code(harness):
         what="doorCode write-back for the shared-code unit",
     )
     assert writes[-1][1] == entrance["keyboardPwd"]
+
+
+def test_two_different_codes_reach_the_guest_through_two_fields(harness):
+    """Entrance and flat on separate codes, both delivered.
+
+    Hostaway has one doorCode field, so the second code has to travel in a
+    reservation custom field. The merge must not wipe a field somebody else
+    owns -- that is the part most likely to go wrong quietly.
+    """
+    rid = 910005
+    arrival, departure = TODAY + dt.timedelta(days=45), TODAY + dt.timedelta(days=47)
+    res = booking(rid, arrival, departure, listingMapId=LISTING_TWO_CODES)
+    # A pre-existing value on an unrelated custom field.
+    res["customFieldValues"] = [
+        {"customFieldId": OTHER_CUSTOM_FIELD_ID, "value": "do not clobber"}
+    ]
+    harness.upsert_reservation(res)
+
+    flat = harness.wait_for_codes(rid, LOCK_TWO_FLAT)[0]
+    entrance = harness.wait_for_codes(rid, LOCK_TWO_ENTRANCE)[0]
+    assert flat["keyboardPwd"] != entrance["keyboardPwd"]
+
+    door_writes = wait_until(
+        lambda: [w for w in harness.door_code_writes() if w[0] == str(rid)] or None,
+        what="doorCode write",
+    )
+    assert door_writes[-1][1] == flat["keyboardPwd"]
+
+    cf = wait_until(
+        lambda: [w for w in harness.custom_field_writes() if w[0] == str(rid)] or None,
+        what="custom field write",
+    )
+    written = {e["customFieldId"]: e["value"] for e in cf[-1][1]}
+    assert written[ENTRANCE_CUSTOM_FIELD_ID] == entrance["keyboardPwd"]
+    assert written[OTHER_CUSTOM_FIELD_ID] == "do not clobber"
 
 
 def test_shared_code_survives_a_date_change(harness):

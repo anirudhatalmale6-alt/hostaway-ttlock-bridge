@@ -243,10 +243,39 @@ class HostawayClient:
 
     async def set_door_code(self, reservation_id: str | int, code: str) -> None:
         """Write the code onto the reservation so Hostaway's guest-messaging
-        templates can use {{doorCode}}.  Best effort -- never fatal."""
+        templates can use the door code tag.  Best effort -- never fatal."""
         await self._request(
             "PUT",
             f"/reservations/{reservation_id}",
             params={"forceOverbooking": 0},
             json={"doorCode": code},
+        )
+
+    async def set_custom_fields(
+        self, reservation_id: str | int, values: dict[int, str]
+    ) -> None:
+        """Set custom field values on a reservation, preserving the others.
+
+        Hostaway takes ``customFieldValues`` as a whole array, so writing only
+        our entry would blank every other field on the booking. We read what is
+        there, overlay ours, and send the merged list back.
+        """
+        if not values:
+            return
+        existing = await self.get_reservation_with_resources(reservation_id)
+        merged: dict[int, str] = {}
+        for entry in existing.get("customFieldValues") or []:
+            field_id = entry.get("customFieldId")
+            if field_id is not None:
+                merged[int(field_id)] = entry.get("value")
+        merged.update({int(k): v for k, v in values.items()})
+        payload = [
+            {"customFieldId": field_id, "value": value}
+            for field_id, value in merged.items()
+        ]
+        await self._request(
+            "PUT",
+            f"/reservations/{reservation_id}",
+            params={"forceOverbooking": 0},
+            json={"customFieldValues": payload},
         )

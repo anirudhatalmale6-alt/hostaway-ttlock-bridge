@@ -56,6 +56,21 @@ units:
         label: "Flat door"
         primary: true
 
+  # Same shape, but the guest gets TWO different codes. The flat code goes in
+  # Hostaway's doorCode; the entrance code needs a reservation custom field,
+  # because Hostaway only has one doorCode per booking.
+  # The field must be object=reservation -- a listing field holds one fixed
+  # value per property. Run scripts/inspect_hostaway.py to see which is which.
+  - listing_map_id: 123459
+    name: "Anderson House Flat 9"
+    locks:
+      - lock_id: 9876549
+        label: "Flat door"
+        primary: true
+      - lock_id: 9876550
+        label: "Building entrance"
+        custom_field_id: 102884
+
   - listing_map_id: 123457
     name: "City Loft"
     timezone: Europe/Madrid     # per-unit override

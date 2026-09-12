@@ -173,8 +173,33 @@ shared record — so each door can still be revoked independently. It also means
 the one `doorCode` field Hostaway gives us is enough.
 
 Leave `shared_code` off and each door gets its own code. That is the stronger
-arrangement if you want the cleaner to hold the gate code but not the flat
-code, but only the `primary` door's code reaches the guest's message.
+arrangement — a cleaner can hold the entrance code without the flat code, and
+one compromised code does not open the whole building.
+
+The catch is delivery: Hostaway has only one `doorCode` field, so the second
+code needs somewhere else to live. Give that lock a reservation custom field:
+
+```yaml
+  - listing_map_id: 589481
+    name: "Anderson House Flat 9"
+    locks:
+      - lock_id: 31041746
+        label: "Flat door"
+        primary: true              # -> reservation.doorCode
+      - lock_id: 27612478
+        label: "Building entrance"
+        custom_field_id: 102884    # -> reservation custom field
+```
+
+Get the id from `GET /v1/customFields`, or run `scripts/inspect_hostaway.py`.
+
+**The field must have `object: reservation`.** A *listing* custom field holds
+one fixed value per property and cannot carry a code that differs per booking —
+if you point `custom_field_id` at one, every guest overwrites the last.
+`inspect_hostaway.py` prints which kind each field is.
+
+Writing a custom field reads the reservation first and merges, so other fields
+on the booking are preserved rather than blanked.
 
 `shared_code` needs gateways: an offline code is derived by TTLock per lock and
 cannot be made to match another door's. Offline doors in a shared unit keep
@@ -309,7 +334,7 @@ make test        # everything, ~40s
 make test-fast   # skips the two that wait on the reconciler
 ```
 
-61 tests. The end-to-end suite runs three real HTTP servers on loopback — a
+67 tests. The end-to-end suite runs three real HTTP servers on loopback — a
 mock Hostaway, a mock TTLock, and the bridge itself under uvicorn. Nothing is
 monkeypatched: tests change a booking on the mock Hostaway, which delivers a
 genuine webhook over the network, and then assert on what ended up on the mock

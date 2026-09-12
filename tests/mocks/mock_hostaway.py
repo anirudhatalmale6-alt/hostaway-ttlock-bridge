@@ -29,6 +29,7 @@ class State:
         self.webhook_auth: tuple[str, str] | None = None
         self.webhook_calls: list[dict] = []
         self.door_code_writes: list[tuple[str, str]] = []
+        self.custom_field_writes: list[tuple[str, list]] = []
         self.fail_next_webhook: int = 0
 
 
@@ -129,6 +130,10 @@ async def update_reservation(
     res.update(body)
     if "doorCode" in body:
         state.door_code_writes.append((str(reservation_id), body["doorCode"]))
+    if "customFieldValues" in body:
+        state.custom_field_writes.append(
+            (str(reservation_id), body["customFieldValues"])
+        )
     return JSONResponse(_envelope(res))
 
 
@@ -181,7 +186,10 @@ async def delete_reservation(reservation_id: str) -> dict:
 
 @app.get("/__test__/door_codes")
 async def door_codes() -> dict:
-    return {"writes": state.door_code_writes}
+    return {
+        "writes": state.door_code_writes,
+        "custom_fields": state.custom_field_writes,
+    }
 
 
 @app.post("/__test__/reset")

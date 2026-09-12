@@ -275,8 +275,8 @@ class Syncer:
         desired = await self._desired_codes(unit, active, window)
         await self._apply(rid, int(listing_id), desired, result)
 
-        if result.codes and self.s.write_door_code_to_hostaway and active:
-            await self._write_back_door_code(rid, desired, result)
+        if result.codes and active:
+            await self._write_back_codes(rid, desired, result)
         return result
 
     # -- desired state -------------------------------------------------
@@ -657,29 +657,54 @@ class Syncer:
                 result.errors.append(f"lock {lock_id}: revoke failed: {exc}")
                 self._record_failure(rid, lock_id, str(exc))
 
-    async def _write_back_door_code(
+    async def _write_back_codes(
         self, rid: str, desired: list[DesiredCode], result: SyncResult
     ) -> None:
-        """Put the primary door's code on the Hostaway reservation.
+        """Put the codes where the guest's check-in instructions can find them.
 
-        This is what feeds the guest's check-in instructions: Hostaway's
-        message automations read reservation.doorCode. Which door that is comes
-        from ``primary: true`` in units.yaml -- falling back to the first
-        configured door only when nothing is marked.
+        Hostaway gives one ``doorCode`` field per reservation, which goes to the
+        door marked ``primary: true``. Any other door that needs to reach the
+        guest -- a building entrance on its own code -- is written to a
+        reservation custom field instead, named per lock in units.yaml.
+
+        Both are best effort. The lock is already correct at this point; a
+        failure here means the guest was not *told*, which is bad but is not
+        the same as being locked out, and the next sync retries it.
         """
         present = [d for d in desired if d.present]
-        primary = next((d for d in present if d.lock.primary), None)
-        if primary is None:
-            primary = next(iter(present), None)
-        if primary is None:
+        if not present:
             return
-        code = result.codes.get(primary.lock.lock_id)
-        if not code:
+
+        if self.s.write_door_code_to_hostaway:
+            primary = next((d for d in present if d.lock.primary), None)
+            if primary is None:
+                primary = present[0]
+            code = result.codes.get(primary.lock.lock_id)
+            if code:
+                try:
+                    await self.hostaway.set_door_code(rid, code)
+                    result.actions.append(f"hostaway: wrote doorCode {code}")
+                except HostawayError as exc:
+                    log.warning(
+                        "reservation %s: doorCode write-back failed: %s", rid, exc
+                    )
+                    result.actions.append(
+                        f"hostaway: doorCode write-back failed ({exc})"
+                    )
+
+        custom = {
+            d.lock.custom_field_id: result.codes[d.lock.lock_id]
+            for d in present
+            if d.lock.custom_field_id and result.codes.get(d.lock.lock_id)
+        }
+        if not custom:
             return
         try:
-            await self.hostaway.set_door_code(rid, code)
-            result.actions.append(f"hostaway: wrote doorCode {code}")
+            await self.hostaway.set_custom_fields(rid, custom)
+            result.actions.append(
+                "hostaway: wrote custom field(s) "
+                + ", ".join(str(k) for k in sorted(custom))
+            )
         except HostawayError as exc:
-            # Non-fatal: the lock is correct, only the convenience field failed.
-            log.warning("reservation %s: doorCode write-back failed: %s", rid, exc)
-            result.actions.append(f"hostaway: doorCode write-back failed ({exc})")
+            log.warning("reservation %s: custom field write-back failed: %s", rid, exc)
+            result.actions.append(f"hostaway: custom field write-back failed ({exc})")
