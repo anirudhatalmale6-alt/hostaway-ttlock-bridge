@@ -211,6 +211,36 @@ class HostawayClient:
                 break
         return out
 
+    async def list_custom_fields(self) -> list[dict]:
+        """Custom field *definitions* (id, name, type, object it belongs to).
+
+        The id is what `customFieldValues` entries reference, so this is how you
+        turn "Building Door Code" into something the bridge can write to.
+        """
+        body = await self._request("GET", "/customFields")
+        return body.get("result") or []
+
+    async def get_listing(self, listing_id: str | int) -> dict:
+        body = await self._request(
+            "GET", f"/listings/{listing_id}", params={"includeResources": 1}
+        )
+        result = body.get("result") if isinstance(body, dict) else None
+        if not result:
+            raise HostawayError(f"listing {listing_id} not found", body=body)
+        return result
+
+    async def get_reservation_with_resources(self, reservation_id: str | int) -> dict:
+        """Hidden custom fields (isPublic=0) only come back with this flag."""
+        body = await self._request(
+            "GET",
+            f"/reservations/{reservation_id}",
+            params={"includeResources": 1},
+        )
+        result = body.get("result") if isinstance(body, dict) else None
+        if not result:
+            raise HostawayError(f"reservation {reservation_id} not found", body=body)
+        return result
+
     async def set_door_code(self, reservation_id: str | int, code: str) -> None:
         """Write the code onto the reservation so Hostaway's guest-messaging
         templates can use {{doorCode}}.  Best effort -- never fatal."""
