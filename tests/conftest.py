@@ -48,6 +48,9 @@ units:
         label: "Front door"
       - lock_id: {LOCK_NO_GATEWAY}
         label: "Side gate"
+        # Deliberately NOT the first lock, and on the other strategy, so the
+        # write-back test proves `primary` decides -- not YAML ordering.
+        primary: true
 
   - listing_map_id: {LISTING_B}
     name: "City Loft"

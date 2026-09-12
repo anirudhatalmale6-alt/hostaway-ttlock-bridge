@@ -213,6 +213,32 @@ def test_duplicate_listing_ids_are_rejected():
         )
 
 
+def test_two_primary_locks_are_refused():
+    # Exactly one door's code can go into the guest's check-in instructions.
+    # Ambiguity here would silently send half the guests the wrong code.
+    with pytest.raises(ValueError):
+        UnitMap.model_validate(
+            {
+                "units": [
+                    {
+                        "listing_map_id": 1,
+                        "locks": [
+                            {"lock_id": 1, "primary": True},
+                            {"lock_id": 2, "primary": True},
+                        ],
+                    }
+                ]
+            }
+        )
+
+
+def test_no_primary_lock_is_allowed():
+    m = UnitMap.model_validate(
+        {"units": [{"listing_map_id": 1, "locks": [{"lock_id": 1}, {"lock_id": 2}]}]}
+    )
+    assert [l.primary for l in m.resolve(1).locks] == [False, False]
+
+
 def test_per_lock_strategy_overrides_the_unit():
     m = UnitMap.model_validate(
         {

@@ -569,8 +569,17 @@ class Syncer:
     async def _write_back_door_code(
         self, rid: str, desired: list[DesiredCode], result: SyncResult
     ) -> None:
-        """Put the primary door's code on the Hostaway reservation."""
-        primary = next((d for d in desired if d.present), None)
+        """Put the primary door's code on the Hostaway reservation.
+
+        This is what feeds the guest's check-in instructions: Hostaway's
+        message automations read reservation.doorCode. Which door that is comes
+        from ``primary: true`` in units.yaml -- falling back to the first
+        configured door only when nothing is marked.
+        """
+        present = [d for d in desired if d.present]
+        primary = next((d for d in present if d.lock.primary), None)
+        if primary is None:
+            primary = next(iter(present), None)
         if primary is None:
             return
         code = result.codes.get(primary.lock.lock_id)

@@ -84,12 +84,16 @@ def test_new_reservation_creates_time_bound_codes(harness):
     assert len(gw["keyboardPwd"]) == 6
     assert nogw["isCustom"] == 0
 
-    # ...and the code is written back onto the reservation for guest messaging.
+    # ...and the code is written back onto the reservation, which is what
+    # Hostaway's check-in-instruction automations read. The door that supplies
+    # it is the one marked `primary: true` -- here the *second* lock in the
+    # config, so this fails if selection ever falls back to YAML ordering.
     writes = wait_until(
         lambda: [w for w in harness.door_code_writes() if w[0] == str(rid)] or None,
         what="doorCode write-back",
     )
-    assert writes[-1][1] == gw["keyboardPwd"]
+    assert writes[-1][1] == nogw["keyboardPwd"]
+    assert writes[-1][1] != gw["keyboardPwd"]
 
 
 def test_codes_are_not_guessable(harness):

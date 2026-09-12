@@ -100,6 +100,11 @@ class LockConfig(BaseModel):
     label: str = "Lock"
     # Overrides the unit strategy for this door (e.g. one door has a gateway).
     strategy: Strategy | None = None
+    # The door whose code gets written back to Hostaway's reservation.doorCode,
+    # i.e. the one that ends up in the guest's check-in instructions. Without
+    # this the first listed lock wins, which makes the message content depend
+    # on YAML ordering -- too subtle to leave to chance.
+    primary: bool = False
 
 
 class UnitConfig(BaseModel):
@@ -188,7 +193,7 @@ class UnitMap(BaseModel):
     units: list[UnitConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _no_duplicate_listings(self) -> "UnitMap":
+    def _validate_units(self) -> "UnitMap":
         seen: set[int] = set()
         for u in self.units:
             if u.listing_map_id in seen:
@@ -196,6 +201,13 @@ class UnitMap(BaseModel):
                     f"listing_map_id {u.listing_map_id} appears twice in units.yaml"
                 )
             seen.add(u.listing_map_id)
+            primaries = [l for l in u.locks if l.primary]
+            if len(primaries) > 1:
+                raise ValueError(
+                    f"listing_map_id {u.listing_map_id} marks {len(primaries)} locks "
+                    "as primary; exactly one door's code goes into the guest's "
+                    "check-in instructions"
+                )
         return self
 
     # -- lookups -------------------------------------------------------

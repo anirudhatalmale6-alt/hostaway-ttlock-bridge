@@ -147,6 +147,31 @@ has doors; all of them get the same window.
 
 ---
 
+## Getting the code into the guest's check-in instructions
+
+The bridge writes the code back onto the Hostaway reservation's `doorCode`
+field (`WRITE_DOOR_CODE_TO_HOSTAWAY=true`, the default). Hostaway's own message
+automations read that field, so the existing check-in-instruction template
+picks the code up with no extra integration.
+
+Which door's code? The lock marked `primary: true` in `units.yaml`. Mark
+exactly one per unit — the front door, normally. Without it the first
+configured lock wins, which makes the guest's message depend on YAML ordering.
+
+Two timing notes, both from Hostaway's side:
+
+* Hostaway holds a message carrying a door-code tag for about **15 minutes**
+  to give integrations like this one time to fill the field in. We write the
+  code the moment the booking is confirmed — usually days ahead — so the field
+  is populated long before any message is due.
+* If `doorCode` is still empty when that window closes, Hostaway falls back to
+  the **listing's default door code**. That is the failure mode to watch for: a
+  guest gets a plausible-looking code that does not open the door. If you have
+  a listing-level default set, consider clearing it so a miss is loud instead
+  of silent.
+
+---
+
 ## Configuration reference
 
 `units.yaml` — `defaults:` applies to every unit, and any key can be overridden
@@ -158,6 +183,7 @@ per unit; `strategy` can additionally be overridden per lock.
 | `check_in_time` / `check_out_time` | Fallback when the reservation carries no time. |
 | `buffer_before_minutes` / `buffer_after_minutes` | Widen the window at each end — early arrivals, late departures, cleaners. |
 | `code_length` | 4–9 digits. `custom` strategy only. |
+| `primary` (per lock) | This door's code is written to Hostaway's `doorCode`. One per unit. |
 | `strategy` | `auto` (default) / `custom` / `generated`. |
 | `active_statuses` | Hostaway statuses that mean "give access". Anything unrecognised is treated as inactive — it fails closed. |
 | `cancelled_statuses` | Statuses that mean "revoke now". |
@@ -218,7 +244,7 @@ make test        # everything, ~40s
 make test-fast   # skips the two that wait on the reconciler
 ```
 
-54 tests. The end-to-end suite runs three real HTTP servers on loopback — a
+56 tests. The end-to-end suite runs three real HTTP servers on loopback — a
 mock Hostaway, a mock TTLock, and the bridge itself under uvicorn. Nothing is
 monkeypatched: tests change a booking on the mock Hostaway, which delivers a
 genuine webhook over the network, and then assert on what ended up on the mock
